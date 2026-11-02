@@ -175,17 +175,21 @@
     new_fit <- lapply(1:n, function(i){
         newf <- spec$univariate[[i]]
         newf$parmatrix <- pmatrix_spec[[i]]
-        maxpq <- max(newf$spec$model$order)
-        newf$sigma <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)$sigma
+        arma <- newf$spec$model$arma
+        if (is.null(arma)) arma <- c(0,0)
+        maxpq <- max(newf$spec$model$order, arma)
+        rep_i <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)
+        newf$sigma <- rep_i$sigma
         if (maxpq > 0) newf$sigma <- newf$sigma[-c(1:maxpq)]
+        if (sum(arma) > 0) newf$conditional_mu <- tail(rep_i$conditional_mean, length(newf$sigma))
         newf$loglik <- spec$univariate[[i]]$tmb$fn(pmatrix_spec[[i]][estimate == 1]$value)
         return(newf)
     })
     new_fit <- to_multi_estimate(new_fit)
     spec$univariate <- new_fit
     tmp <- .dcc_dynamic_values(pmatrix_dcc[estimate == 1]$value, spec, type = "nll")
-    model_loglik <- -1.0 * tmp
-    return(model_loglik)
+    model_nll <- tmp
+    return(model_nll)
 }
 
 .dcc_dynamic_joint_nllvec <- function(pars, spec)
@@ -200,20 +204,24 @@
     new_fit <- lapply(1:n, function(i) {
         newf <- spec$univariate[[i]]
         newf$parmatrix <- pmatrix_spec[[i]]
-        maxpq <- max(newf$spec$model$order)
-        newf$sigma <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)$sigma
+        arma <- newf$spec$model$arma
+        if (is.null(arma)) arma <- c(0,0)
+        maxpq <- max(newf$spec$model$order, arma)
+        rep_i <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)
+        newf$sigma <- rep_i$sigma
         if (maxpq > 0) newf$sigma <- newf$sigma[-c(1:maxpq)]
-        newf$llvec <- -1 * log(spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)$ll_vector)
+        if (sum(arma) > 0) newf$conditional_mu <- tail(rep_i$conditional_mean, length(newf$sigma))
+        newf$llvec <- -1 * log(rep_i$ll_vector)
         return(newf)
     })
     new_fit <- to_multi_estimate(new_fit)
     spec$univariate <- new_fit
-    model_loglik <- -1.0 * .dcc_dynamic_values(pmatrix_dcc[estimate == 1]$value, spec, type = "dccll_vec")
+    model_nll <- .dcc_dynamic_values(pmatrix_dcc[estimate == 1]$value, spec, type = "dccll_vec")
     maxpq <- max(spec$dynamics$order)
     if (maxpq > 0) {
-        model_loglik <- model_loglik[-c(1:maxpq)]
+        model_nll <- model_nll[-c(1:maxpq)]
     }
-    return(model_loglik)
+    return(model_nll)
 }
 
 
@@ -225,27 +233,23 @@
     dcc_hessian <- matrix(0, m, m)
     H <- bdiag(garch_hessian)
     H <- bdiag(H, dcc_hessian)
-    init_llh <- .dcc_dynamic_joint_nll(pars, spec)
     .epsilon <- .Machine$double.eps
     n <- length(pars)
-    step_size <- .epsilon^(1/3) * pmax(abs(pars), 1)
+    step_size <- .epsilon^(1/4) * pmax(abs(pars), 1e-4)
     tmp <- pars + step_size
     step_size <- tmp - pars
     deltas <- as.matrix(diag(step_size, length(step_size), length(step_size)))
-    g <- NULL
-    g <- future_lapply(1:n, function(i) {
-        setDTthreads(1)
-        .dcc_dynamic_joint_nll(pars + deltas[, i], spec)
-    }, future.packages = c("tsmarch","data.table"), future.seed = TRUE)
-    g <- eval(g)
-    g <- unlist(g)
     step_matrix <- step_size %*% t(step_size)
     tmp <- NULL
     tmp <- future_lapply(1:n, function(i) {
+        setDTthreads(1)
         s_tmp = step_matrix
         for (j in (n - m + 1):n) {
             if (i <= j) {
-                s_tmp[i, j] <- (.dcc_dynamic_joint_nll(pars + deltas[, i] + deltas[, j], spec) - g[i] - g[j] + init_llh) / s_tmp[i, j]
+                s_tmp[i, j] <- (.dcc_dynamic_joint_nll(pars + deltas[, i] + deltas[, j], spec) -
+                                .dcc_dynamic_joint_nll(pars + deltas[, i] - deltas[, j], spec) -
+                                .dcc_dynamic_joint_nll(pars - deltas[, i] + deltas[, j], spec) +
+                                .dcc_dynamic_joint_nll(pars - deltas[, i] - deltas[, j], spec)) / (4 * s_tmp[i, j])
                 s_tmp[j, i] <- s_tmp[i, j]
             }
         }
@@ -312,17 +316,20 @@
     new_fit <- lapply(1:n, function(i){
         newf <- spec$univariate[[i]]
         newf$parmatrix <- pmatrix_spec[[i]]
-        maxpq <- max(newf$spec$model$order)
-        newf$sigma <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)$sigma
+        arma <- newf$spec$model$arma
+        if (is.null(arma)) arma <- c(0,0)
+        maxpq <- max(newf$spec$model$order, arma)
+        rep_i <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)
+        newf$sigma <- rep_i$sigma
         if (maxpq > 0) newf$sigma <- newf$sigma[-c(1:maxpq)]
+        if (sum(arma) > 0) newf$conditional_mu <- tail(rep_i$conditional_mean, length(newf$sigma))
         newf$loglik <- spec$univariate[[i]]$tmb$fn(pmatrix_spec[[i]][estimate == 1]$value)
         return(newf)
     })
     new_fit <- to_multi_estimate(new_fit)
     spec$univariate <- new_fit
-    model_loglik <- .dcc_constant_values(pmatrix_dcc[estimate == 1]$value, spec, type = "nll")
-    model_loglik <- -1.0 * model_loglik
-    return(model_loglik)
+    model_nll <- .dcc_constant_values(pmatrix_dcc[estimate == 1]$value, spec, type = "nll")
+    return(model_nll)
 }
 
 
@@ -338,16 +345,20 @@
     new_fit <- lapply(1:n, function(i){
         newf <- spec$univariate[[i]]
         newf$parmatrix <- pmatrix_spec[[i]]
-        maxpq <- max(newf$spec$model$order)
-        newf$sigma <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)$sigma
+        arma <- newf$spec$model$arma
+        if (is.null(arma)) arma <- c(0,0)
+        maxpq <- max(newf$spec$model$order, arma)
+        rep_i <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)
+        newf$sigma <- rep_i$sigma
         if (maxpq > 0) newf$sigma <- newf$sigma[-c(1:maxpq)]
-        newf$llvec <- -1 * log(spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)$ll_vector)
+        if (sum(arma) > 0) newf$conditional_mu <- tail(rep_i$conditional_mean, length(newf$sigma))
+        newf$llvec <- -1 * log(rep_i$ll_vector)
         return(newf)
     })
     new_fit <- to_multi_estimate(new_fit)
     spec$univariate <- new_fit
-    model_loglik <- -1.0 * .dcc_constant_values(pmatrix_dcc[estimate == 1]$value, spec, type = "ll_vec")
-    return(model_loglik)
+    model_nll <- .dcc_constant_values(pmatrix_dcc[estimate == 1]$value, spec, type = "ll_vec")
+    return(model_nll)
 }
 
 .dcc_constant_hessian <- function(pars, spec)
@@ -358,27 +369,23 @@
     dcc_hessian <- matrix(0, m, m)
     H <- bdiag(garch_hessian)
     H <- bdiag(H, dcc_hessian)
-    init_llh <- .dcc_constant_joint_nll(pars, spec)
     .epsilon <- .Machine$double.eps
     n <- length(pars)
-    step_size <- .epsilon^(1/3) * pmax(abs(pars), 1)
+    step_size <- .epsilon^(1/4) * pmax(abs(pars), 1e-4)
     tmp <- pars + step_size
     step_size <- tmp - pars
     deltas <- as.matrix(diag(step_size, length(step_size), length(step_size)))
-    g <- NULL
-    g <- future_lapply(1:n, function(i) {
-        setDTthreads(1)
-        .dcc_constant_joint_nll(pars + deltas[, i], spec)
-    }, future.packages = c("tsmarch","data.table"), future.seed = NULL)
-    g <- eval(g)
-    g <- unlist(g)
     step_matrix <- step_size %*% t(step_size)
     tmp <- NULL
     tmp <- future_lapply(1:n, function(i) {
+        setDTthreads(1)
         s_tmp = step_matrix
         for (j in (n - m + 1):n) {
             if (i <= j) {
-                s_tmp[i, j] <- (.dcc_constant_joint_nll(pars + deltas[, i] + deltas[, j], spec) - g[i] - g[j] + init_llh) / s_tmp[i, j]
+                s_tmp[i, j] <- (.dcc_constant_joint_nll(pars + deltas[, i] + deltas[, j], spec) -
+                                .dcc_constant_joint_nll(pars + deltas[, i] - deltas[, j], spec) -
+                                .dcc_constant_joint_nll(pars - deltas[, i] + deltas[, j], spec) +
+                                .dcc_constant_joint_nll(pars - deltas[, i] - deltas[, j], spec)) / (4 * s_tmp[i, j])
                 s_tmp[j, i] <- s_tmp[i, j]
             }
         }
@@ -436,8 +443,8 @@
 {
     maxpq <- max(object$spec$dynamics$order)
     n_series <- object$spec$n_series
-    Qinit <- array(0, dim = c(n_series, n_series, min(1,maxpq)))
-    Zinit <- matrix(0, ncol = n_series, nrow = min(1,maxpq))
+    Qinit <- array(0, dim = c(n_series, n_series, max(1,maxpq)))
+    Zinit <- matrix(0, ncol = n_series, nrow = max(1,maxpq))
     if (maxpq > 0) {
         if (!is.null(Q_init)) {
             if (!all.equal(dim(Q_init), dim(Qinit))) stop("\nQ_init must be an array of size (n_series, n_series, maxpq)")
@@ -462,9 +469,7 @@
         } else {
             Z <- residuals(object, standardize = TRUE)
             if (init_method == "start") {
-                for (i in 1:maxpq) {
-                    Zinit[i, ] <- matrix(0, ncol = n_series, nrow = maxpq)
-                }
+                Zinit[1:maxpq, ] <- matrix(0, ncol = n_series, nrow = maxpq)
             } else if (init_method == "end") {
                 N <- NROW(Z)
                 for (i in 1:maxpq) {

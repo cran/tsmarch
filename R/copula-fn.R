@@ -26,7 +26,7 @@
             out <- data.table(parameter = paste0("alpha_",1), value = 0.0, lower = 0, upper = 0, estimate = 0, scale = 1, group = "alpha", equation = "[DCC]", symbol = paste0("\\alpha_",1))
         }
         if (order[2] > 0) {
-            tmp <- data.table(parameter = paste0("beta_",1:order[1]), value = 0.8, lower = 0, upper = 1, estimate = ifelse(dynamics == "constant", 0, 1), scale = 1, group = "beta",  equation = "[DCC]", symbol = paste0("\\beta_",1:order[2]))
+            tmp <- data.table(parameter = paste0("beta_",1:order[2]), value = 0.8, lower = 0, upper = 1, estimate = ifelse(dynamics == "constant", 0, 1), scale = 1, group = "beta",  equation = "[DCC]", symbol = paste0("\\beta_",1:order[2]))
         } else{
             tmp <- data.table(parameter = paste0("beta_",1), value = 0.0, lower = 0, upper = 0, estimate = 0, scale = 1, group = "beta", equation = "[DCC]", symbol = paste0("\\alpha_",1))
         }
@@ -88,9 +88,13 @@
     new_fit <- lapply(1:n, function(i){
         newf <- spec$univariate[[i]]
         newf$parmatrix <- pmatrix_spec[[i]]
-        maxpq <- max(newf$spec$model$order)
-        newf$sigma <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)$sigma
+        arma <- newf$spec$model$arma
+        if (is.null(arma)) arma <- c(0,0)
+        maxpq <- max(newf$spec$model$order, arma)
+        rep_i <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)
+        newf$sigma <- rep_i$sigma
         if (maxpq > 0) newf$sigma <- newf$sigma[-c(1:maxpq)]
+        if (sum(arma) > 0) newf$conditional_mu <- tail(rep_i$conditional_mean, length(newf$sigma))
         newf$loglik <- spec$univariate[[i]]$tmb$fn(pmatrix_spec[[i]][estimate == 1]$value)
         return(newf)
     })
@@ -98,10 +102,12 @@
     tmp <- copula_transformation_estimate(new_fit, spec$transformation)
     spec$transform$u <- tmp$u
     spec$transform$transform_model <- tmp$transform_model
+    spec$transform$u[spec$transform$u < 3.330669e-16] <- 2.220446e-16
+    spec$transform$u[spec$transform$u > 0.99999] <- 0.99999
     garch_loglik <- sapply(new_fit, function(x) x$loglik)
     copula_loglik <- .copula_dynamic_values(pmatrix_dcc[estimate == 1]$value, spec, type = "nll")
-    model_loglik <- -1.0 * (sum(garch_loglik) + copula_loglik)
-    return(model_loglik)
+    model_nll <- sum(garch_loglik) + copula_loglik
+    return(model_nll)
 }
 
 .copula_dynamic_joint_nllvec <- function(pars, spec)
@@ -116,10 +122,14 @@
     new_fit <- lapply(1:n, function(i){
         newf <- spec$univariate[[i]]
         newf$parmatrix <- pmatrix_spec[[i]]
-        maxpq <- max(newf$spec$model$order)
-        newf$sigma <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)$sigma
+        arma <- newf$spec$model$arma
+        if (is.null(arma)) arma <- c(0,0)
+        maxpq <- max(newf$spec$model$order, arma)
+        rep_i <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)
+        newf$sigma <- rep_i$sigma
         if (maxpq > 0) newf$sigma <- newf$sigma[-c(1:maxpq)]
-        newf$llvec <- -1 * log(spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)$ll_vector)
+        if (sum(arma) > 0) newf$conditional_mu <- tail(rep_i$conditional_mean, length(newf$sigma))
+        newf$llvec <- -1 * log(rep_i$ll_vector)
         return(newf)
     })
     new_fit <- to_multi_estimate(new_fit)
@@ -134,8 +144,8 @@
         copula_loglik <- copula_loglik[-c(1:maxpq)]
     }
     garch_loglik <- do.call(cbind, lapply(new_fit, function(x) x$llvec))
-    model_loglik <- -1.0 * rowSums(cbind(garch_loglik, copula_loglik))
-    return(model_loglik)
+    model_nll <- rowSums(cbind(garch_loglik, copula_loglik))
+    return(model_nll)
 }
 
 
@@ -147,27 +157,23 @@
     dcc_hessian <- matrix(0, m, m)
     H <- bdiag(garch_hessian)
     H <- bdiag(H, dcc_hessian)
-    init_llh <- .copula_dynamic_joint_nll(pars, spec)
     .epsilon <- .Machine$double.eps
     n <- length(pars)
-    step_size <- .epsilon^(1/3) * pmax(abs(pars), 1)
+    step_size <- .epsilon^(1/4) * pmax(abs(pars), 1e-4)
     tmp <- pars + step_size
     step_size <- tmp - pars
     deltas <- as.matrix(diag(step_size, length(step_size), length(step_size)))
-    g <- NULL
-    g <- future_lapply(1:n, function(i) {
-        setDTthreads(1)
-        .copula_dynamic_joint_nll(pars + deltas[, i], spec)
-    }, future.packages = c("tsmarch"), future.seed = TRUE)
-    g <- eval(g)
-    g <- unlist(g)
     step_matrix <- step_size %*% t(step_size)
     tmp <- NULL
     tmp <- future_lapply(1:n, function(i) {
+        setDTthreads(1)
         s_tmp = step_matrix
         for (j in (n - m + 1):n) {
             if (i <= j) {
-                s_tmp[i, j] <- (.copula_dynamic_joint_nll(pars + deltas[, i] + deltas[, j], spec) - g[i] - g[j] + init_llh) / s_tmp[i, j]
+                s_tmp[i, j] <- (.copula_dynamic_joint_nll(pars + deltas[, i] + deltas[, j], spec) -
+                                .copula_dynamic_joint_nll(pars + deltas[, i] - deltas[, j], spec) -
+                                .copula_dynamic_joint_nll(pars - deltas[, i] + deltas[, j], spec) +
+                                .copula_dynamic_joint_nll(pars - deltas[, i] - deltas[, j], spec)) / (4 * s_tmp[i, j])
                 s_tmp[j, i] <- s_tmp[i, j]
             }
         }
@@ -234,9 +240,13 @@
     new_fit <- lapply(1:n, function(i){
         newf <- spec$univariate[[i]]
         newf$parmatrix <- pmatrix_spec[[i]]
-        maxpq <- max(newf$spec$model$order)
-        newf$sigma <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)$sigma
+        arma <- newf$spec$model$arma
+        if (is.null(arma)) arma <- c(0,0)
+        maxpq <- max(newf$spec$model$order, arma)
+        rep_i <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)
+        newf$sigma <- rep_i$sigma
         if (maxpq > 0) newf$sigma <- newf$sigma[-c(1:maxpq)]
+        if (sum(arma) > 0) newf$conditional_mu <- tail(rep_i$conditional_mean, length(newf$sigma))
         newf$loglik <- spec$univariate[[i]]$tmb$fn(pmatrix_spec[[i]][estimate == 1]$value)
         return(newf)
     })
@@ -244,10 +254,12 @@
     tmp <- copula_transformation_estimate(new_fit, spec$transformation)
     spec$transform$u <- tmp$u
     spec$transform$transform_model <- tmp$transform_model
+    spec$transform$u[spec$transform$u < 3.330669e-16] <- 2.220446e-16
+    spec$transform$u[spec$transform$u > 0.99999] <- 0.99999
     garch_loglik <- sapply(new_fit, function(x) x$loglik)
     copula_loglik <- .copula_constant_values(pmatrix_copula[estimate == 1]$value, spec, type = "nll")
-    model_loglik <- -1.0 * (sum(garch_loglik) + copula_loglik)
-    return(model_loglik)
+    model_nll <- sum(garch_loglik) + copula_loglik
+    return(model_nll)
 }
 
 
@@ -263,20 +275,26 @@
     new_fit <- lapply(1:n, function(i){
         newf <- spec$univariate[[i]]
         newf$parmatrix <- pmatrix_spec[[i]]
-        maxpq <- max(newf$spec$model$order)
-        newf$sigma <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)$sigma
+        arma <- newf$spec$model$arma
+        if (is.null(arma)) arma <- c(0,0)
+        maxpq <- max(newf$spec$model$order, arma)
+        rep_i <- spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)
+        newf$sigma <- rep_i$sigma
         if (maxpq > 0) newf$sigma <- newf$sigma[-c(1:maxpq)]
-        newf$llvec <- -1 * log(spec$univariate[[i]]$tmb$report(pmatrix_spec[[i]][estimate == 1]$value)$ll_vector)
+        if (sum(arma) > 0) newf$conditional_mu <- tail(rep_i$conditional_mean, length(newf$sigma))
+        newf$llvec <- -1 * log(rep_i$ll_vector)
         return(newf)
     })
     new_fit <- to_multi_estimate(new_fit)
     tmp <- copula_transformation_estimate(new_fit, spec$transformation)
     spec$transform$u <- tmp$u
     spec$transform$transform_model <- tmp$transform_model
+    spec$transform$u[spec$transform$u < 3.330669e-16] <- 2.220446e-16
+    spec$transform$u[spec$transform$u > 0.99999] <- 0.99999
     copula_loglik <- .copula_constant_values(pmatrix_copula[estimate == 1]$value, spec, type = "ll_vec")
     garch_loglik <- do.call(cbind, lapply(new_fit, function(x) x$llvec))
-    model_loglik <- -1.0 * rowSums(cbind(garch_loglik, copula_loglik))
-    return(model_loglik)
+    model_nll <- rowSums(cbind(garch_loglik, copula_loglik))
+    return(model_nll)
 }
 
 .copula_constant_hessian <- function(pars, spec)
@@ -287,27 +305,23 @@
     copula_hessian <- matrix(0, m, m)
     H <- bdiag(garch_hessian)
     H <- bdiag(H, copula_hessian)
-    init_llh <- .copula_constant_joint_nll(pars, spec)
     .epsilon <- .Machine$double.eps
     n <- length(pars)
-    step_size <- .epsilon^(1/3) * pmax(abs(pars), 1)
+    step_size <- .epsilon^(1/4) * pmax(abs(pars), 1e-4)
     tmp <- pars + step_size
     step_size <- tmp - pars
     deltas <- as.matrix(diag(step_size, length(step_size), length(step_size)))
-    g <- NULL
-    g <- future_lapply(1:n, function(i) {
-        setDTthreads(1)
-        .copula_constant_joint_nll(pars + deltas[, i], spec)
-    }, future.packages = c("tsmarch"), future.seed = NULL)
-    g <- eval(g)
-    g <- unlist(g)
     step_matrix <- step_size %*% t(step_size)
     tmp <- NULL
     tmp <- future_lapply(1:n, function(i) {
+        setDTthreads(1)
         s_tmp = step_matrix
         for (j in (n - m + 1):n) {
             if (i <= j) {
-                s_tmp[i, j] <- (.copula_constant_joint_nll(pars + deltas[, i] + deltas[, j], spec) - g[i] - g[j] + init_llh) / s_tmp[i, j]
+                s_tmp[i, j] <- (.copula_constant_joint_nll(pars + deltas[, i] + deltas[, j], spec) -
+                                .copula_constant_joint_nll(pars + deltas[, i] - deltas[, j], spec) -
+                                .copula_constant_joint_nll(pars - deltas[, i] + deltas[, j], spec) +
+                                .copula_constant_joint_nll(pars - deltas[, i] - deltas[, j], spec)) / (4 * s_tmp[i, j])
                 s_tmp[j, i] <- s_tmp[i, j]
             }
         }

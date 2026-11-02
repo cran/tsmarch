@@ -25,28 +25,28 @@ test <- sweep(test, 2, mu, "-")
 oldpar <- par(mfrow = c(1,1))
 
 ## ----gogarch_model------------------------------------------------------------
-gogarch_mod <- gogarch_modelspec(train, distribution = "nig", model = "gjrgarch", components = 4) |> estimate()
+gogarch_mod <- gogarch_modelspec(train, distribution = "nig", ica = "radical", model = "gjrgarch", components = 4) |> estimate()
 summary(gogarch_mod)
 
 ## ----newsimpact,fig.width=6,fig.height=4--------------------------------------
 gogarch_mod |> newsimpact(type = "correlation", pair = c(2,5), factor = c(1,3)) |> plot()
 
 ## ----var_calc,highlight=TRUE--------------------------------------------------
-h <- 98
+h <- 50
 w <- rep(1/5, 5)
 gogarch_filter_mod <- gogarch_mod
-var_value <- rep(0, 98)
+var_value <- rep(0, h)
 actual <- as.numeric(coredata(test) %*% w)
 
 # first prediction without filtering update
-var_value[1] <- predict(gogarch_mod, h = 1, nsim = 5000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
+var_value[1] <- predict(gogarch_mod, h = 1, nsim = 1000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
 for (i in 2:h) {
   gogarch_filter_mod <- tsfilter(gogarch_filter_mod, y = test[i - 1,])
-  var_value[i]  <- predict(gogarch_filter_mod, h = 1, nsim = 5000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
+  var_value[i]  <- predict(gogarch_filter_mod, h = 1, nsim = 1000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
 }
 
 ## -----------------------------------------------------------------------------
-as_flextable(var_cp_test(actual, var_value, alpha = 0.1), include.decision = TRUE)
+as_flextable(var_cp_test(actual[1:h], var_value, alpha = 0.1), include.decision = TRUE)
 
 ## ----comoments,highlight=TRUE-------------------------------------------------
 V <- tscov(gogarch_mod)
@@ -136,18 +136,18 @@ dcc_mod |> summary()
 newsimpact(dcc_mod, pair = c(1,2)) |> plot()
 
 ## ----dcc_var_calc,highlight=TRUE----------------------------------------------
-h <- 98
+h <- 50
 w <- rep(1/5, 5)
 dcc_filter_mod <- dcc_mod
-var_value <- rep(0, 98)
+var_value <- rep(0, h)
 actual <- as.numeric(coredata(test) %*% w)
 # first prediction without filtering update
-var_value[1] <- predict(dcc_mod, h = 1, nsim = 5000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
+var_value[1] <- predict(dcc_mod, h = 1, nsim = 1000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
 for (i in 2:h) {
   dcc_filter_mod <- tsfilter(dcc_filter_mod, y = test[i - 1,])
-  var_value[i]  <- predict(dcc_filter_mod, h = 1, nsim = 5000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
+  var_value[i]  <- predict(dcc_filter_mod, h = 1, nsim = 1000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
 }
-as_flextable(var_cp_test(actual, var_value, alpha = 0.1), include.decision = TRUE)
+as_flextable(var_cp_test(actual[1:h], var_value, alpha = 0.1), include.decision = TRUE)
 
 ## ----dcc_weighted, fig.width=6,fig.height=4-----------------------------------
 p <- predict(dcc_mod, h = 98, nsim = 5000)
@@ -160,7 +160,7 @@ shape <- unname(coef(dcc_mod)["shape"])
 simulated_var <- unname(apply(simulated_aggregate$mu, 2, quantile, 0.05))
 analytic_var <- qstd(0.05, mu = weighted_mu, sigma = weighted_sigma, shape = shape)
 par(mar = c(2,2,1.1,1), pty = "m", cex.axis = 0.8, cex.main = 0.8)
-plot(as.Date(p$forc_dates), simulated_var, type = "l", ylab = "", xlab = "", main = "Value at Risk [5%]", ylim = c(-0.039, -0.033))
+plot(as.Date(p$forc_dates), simulated_var, type = "l", ylab = "", xlab = "", main = "Value at Risk [5%]", ylim = c(-0.042, -0.033))
 lines(as.Date(p$forc_dates), analytic_var, col = 2, lty = 2)
 legend("topright", c("Simulated","Analytic"), col = 1:2, lty = 1:2, bty = "n")
 par(oldpar)
@@ -183,18 +183,18 @@ cgarch_mod |> summary()
 newsimpact(cgarch_mod, pair = c(1,2)) |> plot()
 
 ## ----cgarch_var_calc,highlight=TRUE-------------------------------------------
-h <- 98
+h <- 50
 w <- rep(1/5, 5)
 cgarch_filter_mod <- cgarch_mod
-var_value <- rep(0, 98)
+var_value <- rep(0, h)
 actual <- as.numeric(coredata(test) %*% w)
 # first prediction without filtering update
-var_value[1] <- predict(cgarch_mod, h = 1, nsim = 5000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
+var_value[1] <- predict(cgarch_mod, h = 1, nsim = 1000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
 for (i in 2:h) {
   cgarch_filter_mod <- tsfilter(cgarch_filter_mod, y = test[i - 1,])
-  var_value[i]  <- predict(cgarch_filter_mod, h = 1, nsim = 5000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
+  var_value[i]  <- predict(cgarch_filter_mod, h = 1, nsim = 1000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
 }
-as_flextable(var_cp_test(actual, var_value, alpha = 0.1), include.decision = TRUE)
+as_flextable(var_cp_test(actual[1:h], var_value, alpha = 0.1), include.decision = TRUE)
 
 ## ----cgarch_weighted, fig.width=6,fig.height=4--------------------------------
 p <- predict(cgarch_mod, h = 98, nsim = 5000)
@@ -218,7 +218,7 @@ colnames(.residuals) <- colnames(train)
 colnames(.predicted) <- colnames(train)
 
 ## -----------------------------------------------------------------------------
-dcc_mod_mean <- dcc_modelspec(garch_model, dynamics = "adcc", distribution = "mvt", cond_mean = .fitted) |> estimate()
+dcc_mod_mean <- dcc_modelspec(garch_model, dynamics = "adcc", distribution = "mvt", cond_mean = .fitted) |> estimate(return_hessian = FALSE)
 all.equal(fitted(dcc_mod_mean), .fitted)
 
 ## -----------------------------------------------------------------------------
@@ -273,4 +273,16 @@ par(mar = c(2,2,1.1,1), pty = "m", cex.axis = 0.8, cex.main = 0.8)
 matplot(cbind(C_a, C_b), type = "l", lty = c(1,3), lwd = c(2, 2), col = c("grey","tomato1"), ylab = "", main = "Pairwise Correlation")
 grid()
 par(oldpar)
+
+## -----------------------------------------------------------------------------
+garch_model_arma <- lapply(1:5, function(i) {
+  garch_modelspec(train[,i], model = "gjrgarch", arma = c(1,0)) |> estimate(keep_tmb = TRUE)
+})
+garch_model_arma <- to_multi_estimate(garch_model_arma)
+names(garch_model_arma) <- colnames(train)
+dcc_mod_arma <- dcc_modelspec(garch_model_arma, dynamics = "adcc", distribution = "mvt") |> estimate(return_hessian = FALSE)
+all.equal(coredata(fitted(dcc_mod_arma)), coredata(fitted(garch_model_arma)))
+
+## -----------------------------------------------------------------------------
+try(dcc_modelspec(garch_model_arma, dynamics = "adcc", cond_mean = .fitted))
 

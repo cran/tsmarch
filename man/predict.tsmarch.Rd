@@ -15,6 +15,8 @@
   forc_dates = NULL,
   cond_mean = NULL,
   seed = NULL,
+  newxreg = NULL,
+  newvreg = NULL,
   ...
 )
 
@@ -26,6 +28,8 @@
   forc_dates = NULL,
   cond_mean = NULL,
   seed = NULL,
+  newxreg = NULL,
+  newvreg = NULL,
   ...
 )
 
@@ -57,9 +61,28 @@ use the implied periodicity of the data to generate a regular sequence of dates
 after the last available date in the data.}
 
 \item{cond_mean}{an optional matrix (h x n_series) of the predicted conditional
-mean for the series which is used to recenter the simulated predictive distribution.}
+mean for the series which is used to recenter the simulated predictive distribution.
+For the DCC and Copula GARCH models this is only available when every first
+stage model uses \code{arma = c(0,0)} and no mean regressors; otherwise the
+conditional mean is taken from the first stage models automatically.}
 
 \item{seed}{an integer that will be used in a call to set.seed before simulating.}
+
+\item{newxreg}{an optional list with one element per series supplying the mean
+equation regressors of the first stage models for the forecast horizon. Each
+element is either NULL or a matrix/xts of regressors with \code{h} rows and the
+same number of columns as the regressors used when specifying that series'
+model. The list may be fully named (and partial) or fully unnamed (and
+complete); see the \code{newxreg} argument of \code{\link{tsfilter}} for
+details. Not used in the GOGARCH model.}
+
+\item{newvreg}{an optional list with one element per series supplying the
+variance equation regressors of the first stage models for the forecast
+horizon. Each element is either NULL or a matrix/xts of regressors with
+\code{h} rows and the same number of columns as the variance regressors
+used when specifying that series' model. The list may be fully named (and
+partial) or fully unnamed (and complete); see the \code{newvreg} argument
+of \code{\link{tsfilter}} for details. Not used in the GOGARCH model.}
 
 \item{...}{no additional arguments currently supported.}
 }
@@ -73,4 +96,9 @@ Prediction function for estimated objects.
 \details{
 For the Copula GARCH model, the prediction is based on simulation due to the
 nonlinear transformation present in the model.
+
+When first stage mean or variance regressors are supplied for the forecast
+horizon (\code{newxreg} and \code{newvreg}), they are treated as a single
+deterministic path shared across all simulated paths, so regressor
+uncertainty is not propagated into the predictive distribution.
 }

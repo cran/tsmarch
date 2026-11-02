@@ -18,6 +18,8 @@
   init_method = c("start", "end"),
   cond_mean = NULL,
   sim_method = c("parametric", "bootstrap"),
+  xreg = NULL,
+  vreg = NULL,
   ...
 )
 
@@ -32,6 +34,8 @@
   init_method = c("start", "end"),
   cond_mean = NULL,
   sim_method = c("parametric", "bootstrap"),
+  xreg = NULL,
+  vreg = NULL,
   ...
 )
 
@@ -74,12 +78,32 @@ uses the last values of the estimated model to initialize the recursion. In
 the constant correlation case, only the the GARCH initialization is relevant.}
 
 \item{cond_mean}{an optional matrix (h x n_series) of the simulated conditional
-mean for the series which is used to recenter the simulated distribution.}
+mean for the series which is used to recenter the simulated distribution.
+For the DCC and Copula GARCH models this is only available when every first
+stage model uses \code{arma = c(0,0)} and no mean regressors; otherwise the
+conditional mean is taken from the first stage models automatically.}
 
 \item{sim_method}{white noise method for generating random sample for the
 multivariate distribution. The default \dQuote{parametric} samples random
 variates from the underlying error distribution whilst the \dQuote{bootstrap}
 samples from the whitened innovations of the fitted model.}
+
+\item{xreg}{an optional list with one element per series supplying the mean
+equation regressors of the first stage models for the simulated horizon. Each
+element is either NULL or a matrix/xts of regressors with \code{h + burn} rows
+and the same number of columns as the regressors used when specifying that
+series' model. The list may be fully named (and partial) or fully unnamed
+(and complete); see the \code{newxreg} argument of \code{\link{tsfilter}} for
+details. Not used in the GOGARCH model.}
+
+\item{vreg}{an optional list with one element per series supplying the
+variance equation regressors of the first stage models for the simulated
+horizon. Each element is either NULL or a matrix/xts of regressors with
+\code{h + burn} rows and the same number of columns as the variance
+regressors used when specifying that series' model. The list may be fully
+named (and partial) or fully unnamed (and complete); see the \code{newvreg}
+argument of \code{\link{tsfilter}} for details. Not used in the GOGARCH
+model.}
 
 \item{...}{no additional arguments currently supported.}
 }
@@ -97,4 +121,9 @@ the parallel execution operates on is the number of series (for the
 individual GARCH series simulation), so unless you have more than 100 series
 then it is possible that using a parallel back-end may actually result in
 slower execution due to the overhead involved.
+
+When first stage mean or variance regressors are supplied for the simulated
+horizon (\code{xreg} and \code{vreg}), they are treated as a single
+deterministic path shared across all simulated paths, so regressor
+uncertainty is not propagated into the predictive distribution.
 }

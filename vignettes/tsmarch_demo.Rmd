@@ -27,14 +27,18 @@ knitr::opts_chunk$set(
 # Introduction
 
 
-All models in the `tsmarch` package assume as input a zero-mean time series of returns, 
-which means that conditional mean filtration should be performed outside the package.
-However, all methods provide an argument to pass the already estimated conditional
-mean (`cond_mean`) which takes care of the conditional distribution centering, 
-particularly during the prediction step, otherwise the user can use the simulated
-distribution of innovations as an input to the conditional mean dynamics simulation.
-Details of how to work with conditional mean dynamics is available in another
-vignette. For this demo, we simply center the data by their mean.
+All models in the `tsmarch` package assume as input a zero-mean time series of returns.
+For the DCC and Copula GARCH models, conditional mean dynamics can either be
+estimated jointly with the GARCH dynamics in the first stage by passing an
+`arma` order to `garch_modelspec`, or performed outside the package with the
+already estimated conditional mean passed via the `cond_mean` argument (these
+two options are mutually exclusive). For the GOGARCH model only the external
+approach is available. The `cond_mean` argument takes care of the conditional
+distribution centering, particularly during the prediction step, otherwise the
+user can use the simulated distribution of innovations as an input to the
+conditional mean dynamics simulation. Details of how to work with conditional
+mean dynamics is available in another vignette. For this demo, we simply center
+the data by their mean.
 
 
 ```{r mod_calc,highlight=TRUE}
@@ -65,7 +69,7 @@ oldpar <- par(mfrow = c(1,1))
 
 
 ```{r gogarch_model}
-gogarch_mod <- gogarch_modelspec(train, distribution = "nig", model = "gjrgarch", components = 4) |> estimate()
+gogarch_mod <- gogarch_modelspec(train, distribution = "nig", ica = "radical", model = "gjrgarch", components = 4) |> estimate()
 summary(gogarch_mod)
 ```
 
@@ -89,17 +93,17 @@ shows how to perform 1-step ahead rolling predictions and generation of an equal
 weighted portfolio value at risk at the 10% quantile.
 
 ```{r var_calc,highlight=TRUE}
-h <- 98
+h <- 50
 w <- rep(1/5, 5)
 gogarch_filter_mod <- gogarch_mod
-var_value <- rep(0, 98)
+var_value <- rep(0, h)
 actual <- as.numeric(coredata(test) %*% w)
 
 # first prediction without filtering update
-var_value[1] <- predict(gogarch_mod, h = 1, nsim = 5000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
+var_value[1] <- predict(gogarch_mod, h = 1, nsim = 1000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
 for (i in 2:h) {
   gogarch_filter_mod <- tsfilter(gogarch_filter_mod, y = test[i - 1,])
-  var_value[i]  <- predict(gogarch_filter_mod, h = 1, nsim = 5000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
+  var_value[i]  <- predict(gogarch_filter_mod, h = 1, nsim = 1000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
 }
 ```
 
@@ -113,7 +117,7 @@ use the `var_cp_test` function from the [tstests](https://CRAN.R-project.org/pac
 package to evaluate the accuracy of the calculation:
 
 ```{r}
-as_flextable(var_cp_test(actual, var_value, alpha = 0.1), include.decision = TRUE)
+as_flextable(var_cp_test(actual[1:h], var_value, alpha = 0.1), include.decision = TRUE)
 ```
 
 
@@ -282,18 +286,18 @@ newsimpact(dcc_mod, pair = c(1,2)) |> plot()
 We perform a similar exercise as in the GOGARCH filtering section:
 
 ```{r dcc_var_calc,highlight=TRUE}
-h <- 98
+h <- 50
 w <- rep(1/5, 5)
 dcc_filter_mod <- dcc_mod
-var_value <- rep(0, 98)
+var_value <- rep(0, h)
 actual <- as.numeric(coredata(test) %*% w)
 # first prediction without filtering update
-var_value[1] <- predict(dcc_mod, h = 1, nsim = 5000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
+var_value[1] <- predict(dcc_mod, h = 1, nsim = 1000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
 for (i in 2:h) {
   dcc_filter_mod <- tsfilter(dcc_filter_mod, y = test[i - 1,])
-  var_value[i]  <- predict(dcc_filter_mod, h = 1, nsim = 5000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
+  var_value[i]  <- predict(dcc_filter_mod, h = 1, nsim = 1000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
 }
-as_flextable(var_cp_test(actual, var_value, alpha = 0.1), include.decision = TRUE)
+as_flextable(var_cp_test(actual[1:h], var_value, alpha = 0.1), include.decision = TRUE)
 ```
 
 ## Weighted Portfolio Distribution
@@ -316,7 +320,7 @@ shape <- unname(coef(dcc_mod)["shape"])
 simulated_var <- unname(apply(simulated_aggregate$mu, 2, quantile, 0.05))
 analytic_var <- qstd(0.05, mu = weighted_mu, sigma = weighted_sigma, shape = shape)
 par(mar = c(2,2,1.1,1), pty = "m", cex.axis = 0.8, cex.main = 0.8)
-plot(as.Date(p$forc_dates), simulated_var, type = "l", ylab = "", xlab = "", main = "Value at Risk [5%]", ylim = c(-0.039, -0.033))
+plot(as.Date(p$forc_dates), simulated_var, type = "l", ylab = "", xlab = "", main = "Value at Risk [5%]", ylim = c(-0.042, -0.033))
 lines(as.Date(p$forc_dates), analytic_var, col = 2, lty = 2)
 legend("topright", c("Simulated","Analytic"), col = 1:2, lty = 1:2, bty = "n")
 par(oldpar)
@@ -365,18 +369,18 @@ newsimpact(cgarch_mod, pair = c(1,2)) |> plot()
 
 
 ```{r cgarch_var_calc,highlight=TRUE}
-h <- 98
+h <- 50
 w <- rep(1/5, 5)
 cgarch_filter_mod <- cgarch_mod
-var_value <- rep(0, 98)
+var_value <- rep(0, h)
 actual <- as.numeric(coredata(test) %*% w)
 # first prediction without filtering update
-var_value[1] <- predict(cgarch_mod, h = 1, nsim = 5000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
+var_value[1] <- predict(cgarch_mod, h = 1, nsim = 1000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
 for (i in 2:h) {
   cgarch_filter_mod <- tsfilter(cgarch_filter_mod, y = test[i - 1,])
-  var_value[i]  <- predict(cgarch_filter_mod, h = 1, nsim = 5000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
+  var_value[i]  <- predict(cgarch_filter_mod, h = 1, nsim = 1000, seed = 100) |> value_at_risk(weights = w, alpha = 0.1)
 }
-as_flextable(var_cp_test(actual, var_value, alpha = 0.1), include.decision = TRUE)
+as_flextable(var_cp_test(actual[1:h], var_value, alpha = 0.1), include.decision = TRUE)
 ```
 
 ## Weighted Portfolio Distribution
@@ -397,20 +401,26 @@ par(oldpar)
 # Conditional Mean Dynamics
 
 We briefly address in this section the question of how to handle conditional
-mean dynamics. There are effectively 2 approaches which are available for the
+mean dynamics. There are effectively 3 approaches which are available for the
 user:
 
-1. Pass in the `cond_mean` at every stage of the analysis 
+1. For the DCC and Copula GARCH models, include ARMA dynamics directly in the
+first stage `garch_modelspec` and let the conditional mean propagate
+automatically through all methods (in which case `cond_mean` cannot be used).
+2. Pass in the `cond_mean` at every stage of the analysis 
 (i.e. estimation, prediction, filtering, simulation etc) and the underlying
-code will take care of re-centering the simulated distributions.
-2. Do not pass anything for the `cond_mean` but then take the predicted
+code will take care of re-centering the simulated distributions. This requires
+that all first stage models use `arma = c(0,0)` and is the only option for the
+GOGARCH model.
+3. Do not pass anything for the `cond_mean` but then take the predicted
 simulated zero mean correlated residuals use them as inputs to the prediction 
 method of the conditional mean dynamics.
 
-Whilst the second method may be preferred, not many packages have either an
+Whilst the third method may be preferred, not many packages have either an
 option for generating a simulated predictive distribution or taking an input
 of a pre-created matrix of correlated residuals. In the next section we
-illustrate both approaches.
+illustrate the external approaches, followed by the native first stage
+ARMA-GARCH approach.
 
 
 ## Method 1: Conditional Mean Re-centering
@@ -441,7 +451,7 @@ ensuring that the output generated from different methods which depends on this
 will be correctly reflected. For this example we will use the DCC model:
 
 ```{r}
-dcc_mod_mean <- dcc_modelspec(garch_model, dynamics = "adcc", distribution = "mvt", cond_mean = .fitted) |> estimate()
+dcc_mod_mean <- dcc_modelspec(garch_model, dynamics = "adcc", distribution = "mvt", cond_mean = .fitted) |> estimate(return_hessian = FALSE)
 all.equal(fitted(dcc_mod_mean), .fitted)
 ```
 
@@ -523,3 +533,65 @@ par(oldpar)
 ```
 
 As can be observed, both methods produce almost identical output.
+
+## First Stage ARMA-GARCH
+
+For the DCC and Copula GARCH models, conditional mean dynamics can instead be
+estimated jointly with the GARCH dynamics in the first stage by passing an
+`arma` order to `garch_modelspec`. The resulting conditional mean is then
+propagated automatically through the specification, filtering, prediction and
+simulation methods, and no `cond_mean` argument is needed (or allowed):
+
+```{r}
+garch_model_arma <- lapply(1:5, function(i) {
+  garch_modelspec(train[,i], model = "gjrgarch", arma = c(1,0)) |> estimate(keep_tmb = TRUE)
+})
+garch_model_arma <- to_multi_estimate(garch_model_arma)
+names(garch_model_arma) <- colnames(train)
+dcc_mod_arma <- dcc_modelspec(garch_model_arma, dynamics = "adcc", distribution = "mvt") |> estimate(return_hessian = FALSE)
+all.equal(coredata(fitted(dcc_mod_arma)), coredata(fitted(garch_model_arma)))
+```
+
+The `fitted` method now returns the first stage ARMA conditional means. Passing
+a custom `cond_mean` in this case raises an error, since the two approaches
+are mutually exclusive at the model level:
+
+```{r}
+try(dcc_modelspec(garch_model_arma, dynamics = "adcc", cond_mean = .fitted))
+```
+
+Mean equation regressors can also be included in the first stage via the
+`xreg` argument of `garch_modelspec`, either on their own or together with an
+`arma` order. The forward-looking methods then take a list of new regressors
+with one element per series: `newxreg` in `tsfilter` (rows equal to the new
+data) and `predict` (rows equal to `h`), and `xreg` in `simulate` (rows equal
+to `h + burn`). The list may be fully named, in which case it may be partial,
+or fully unnamed, in which case it must have one element per series. Like ARMA
+dynamics, first stage regressors are mutually exclusive with the `cond_mean`
+argument.
+
+### Variance Equation Regressors
+
+Variance equation regressors can similarly be included in the first stage via
+the `vreg` argument of `garch_modelspec`. The `multiplicative` argument
+controls whether they enter the variance intercept additively or in
+exponential form. The exponential form is the more usual choice in
+practice, since it guarantees a positive variance intercept for any
+combination of regressor and coefficient values and therefore leaves the
+coefficients free to take either sign. Under the additive form, which is
+the `garch_modelspec` default, positivity must instead be imposed by
+constraining the coefficients to be non-negative, so a regressor can only
+raise the variance intercept. The forward-looking methods take the same
+list-one-element-per-series convention as the mean regressors: `newvreg` in
+`tsfilter` (rows equal to the new data) and `predict` (rows equal to `h`),
+and `vreg` in `simulate` (rows equal to `h + burn`), with fully named lists
+allowed to be partial and fully unnamed lists required to cover every series.
+There are two important differences with respect to the mean regressors:
+first, a series specified with `vreg` whose future regressors are not
+supplied raises an error naming the affected series rather than substituting
+zeros with a warning (mirroring the deliberate asymmetry between `newvreg`
+and `newxreg` in `tsgarch`); and second, variance regressors are not mutually
+exclusive with `cond_mean` since they say nothing about the conditional mean.
+For both regressor types, supplied values are treated as a single
+deterministic path shared across all simulated paths, so regressor
+uncertainty is not propagated into the predictive distribution.

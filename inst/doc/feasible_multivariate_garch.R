@@ -8,54 +8,54 @@ knitr::opts_chunk$set(
 )
 
 ## ----eval=FALSE-------------------------------------------
-#  dcc_modelspec(..., dynamics = 'constant')
+# dcc_modelspec(..., dynamics = 'constant')
 
 ## ----eval=FALSE-------------------------------------------
-#  dcc_modelspec(..., dynamics = 'dcc')
+# dcc_modelspec(..., dynamics = 'dcc')
 
 ## ----eval=FALSE-------------------------------------------
-#  dcc_modelspec(...) |> estimate(...)
+# dcc_modelspec(...) |> estimate(...)
 
 ## ----eval=FALSE-------------------------------------------
-#  dcc_modelspec(...) |> estimate(...) |> vcov(...)
+# dcc_modelspec(...) |> estimate(...) |> vcov(...)
 
 ## ----eval=FALSE-------------------------------------------
-#  dcc_modelspec(distribution = 'mvt')
+# dcc_modelspec(distribution = 'mvt')
 
 ## ----eval=FALSE-------------------------------------------
-#  cgarch_modelspec(...)
+# cgarch_modelspec(...)
 
 ## ----eval=FALSE-------------------------------------------
-#  cgarch_modelspec(..., dynamics = 'adcc')
+# cgarch_modelspec(..., dynamics = 'adcc')
 
 ## ----eval=FALSE-------------------------------------------
-#  dcc_modelspec(...) |> estimate(...) |> predict(...)
-#  dcc_modelspec(...) |> estimate(...) |> simulate(...)
+# dcc_modelspec(...) |> estimate(...) |> predict(...)
+# dcc_modelspec(...) |> estimate(...) |> simulate(...)
 
 ## ----eval=FALSE-------------------------------------------
-#  dcc_modelspec(...) |> estimate(...) |> tsaggregate(...)
+# dcc_modelspec(...) |> estimate(...) |> tsaggregate(...)
 
 ## ----eval=FALSE-------------------------------------------
-#  dcc_modelspec(...) |> estimate(...) |> newsimpact(...) |> plot(...)
+# dcc_modelspec(...) |> estimate(...) |> newsimpact(...) |> plot(...)
 
 ## ----eval=FALSE-------------------------------------------
-#  gogarch_modelspec(...)
+# gogarch_modelspec(...)
 
 ## ----eval=FALSE-------------------------------------------
-#  gogarch_modelspec(...) |> estimate(...)
+# gogarch_modelspec(...) |> estimate(...)
 
 ## ----eval=FALSE-------------------------------------------
-#  tscov(...)
-#  tscor(...)
-#  tscoskew(...)
-#  tscoskurt(...)
+# tscov(...)
+# tscor(...)
+# tscoskew(...)
+# tscoskurt(...)
 
 ## ----eval=FALSE-------------------------------------------
-#  gogarch_modelspec(...) |> estimate(...) |> predict(...) |> tsaggregate(...)
+# gogarch_modelspec(...) |> estimate(...) |> predict(...) |> tsaggregate(...)
 
 ## ----eval=FALSE-------------------------------------------
-#  gogarch_modelspec(...) |> estimate(...) |> predict(...) |> tsconvolve(...) |> dfft(...)
+# gogarch_modelspec(...) |> estimate(...) |> predict(...) |> tsconvolve(...) |> dfft(...)
 
 ## ----eval=FALSE-------------------------------------------
-#  gogarch_modelspec(...) |> estimate(...) |> newsimpact(...) |> plot(...)
+# gogarch_modelspec(...) |> estimate(...) |> newsimpact(...) |> plot(...)
 

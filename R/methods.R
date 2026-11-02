@@ -26,6 +26,9 @@ cgarch_modelspec <- function(object, ...)
 #' @param constant_correlation the constant correlation estimator to use. In the
 #' case of the \dQuote{mvt} copula, only Kendall's tau is a valid choice.
 #' @param cond_mean an optional matrix of the conditional mean for the series.
+#' This is only available when every first stage model uses \code{arma = c(0,0)} and no mean regressors;
+#' otherwise the conditional mean is taken from the first
+#' stage models automatically.
 #' @param ... additional arguments passed to the \code{\link[tsdistributions]{spd_modelspec}}
 #' function in the case of the \dQuote{spd} transformation.
 #' @returns an object of class \dQuote{cgarch.spec}.
@@ -40,6 +43,7 @@ cgarch_modelspec.tsgarch.multi_estimate <- function(object, dynamics = c("consta
                                         constant_correlation = c("pearson", "kendall","spearman"),
                                         cond_mean = NULL, ...)
 {
+    .check_cond_mean_dynamics(object, cond_mean)
     dynamics <- match.arg(dynamics[1], c("constant","dcc","adcc"))
     transformation <- match.arg(transformation[1], c("parametric","empirical","spd"))
     copula <- match.arg(copula[1], c("mvn","mvt"))
@@ -124,6 +128,9 @@ dcc_modelspec <- function(object, ...)
 #' @param distribution the multivariate distribution. If using the \dQuote{mvt},
 #' then the first stage univariate models should use the normal distribution.
 #' @param cond_mean an optional matrix of the conditional mean for the series.
+#' This is only available when every first stage model uses \code{arma = c(0,0)} and no mean regressors;
+#' otherwise the conditional mean is taken from the first
+#' stage models automatically.
 #' @param ... not currently used.
 #' @returns an object of class \dQuote{dcc.spec}.
 #' @method dcc_modelspec tsgarch.multi_estimate
@@ -135,6 +142,7 @@ dcc_modelspec.tsgarch.multi_estimate <- function(object, dynamics = c("constant"
                                         distribution = c("mvn","mvt"),
                                         cond_mean = NULL, ...)
 {
+    .check_cond_mean_dynamics(object, cond_mean)
     dynamics <- match.arg(dynamics[1], c("constant","dcc","adcc"))
     distribution <- match.arg(distribution[1], c("mvn","mvt"))
     spec <- list()
@@ -188,7 +196,7 @@ dcc_modelspec.tsgarch.multi_estimate <- function(object, dynamics = c("constant"
 #' of the model (see details). Not applicable in the case of the GOGARCH model.
 #' @param trace whether to print tracing information for the GOGARCH model estimation.
 #' @param ... for the GOGARCH model, additional options passed to the \code{\link{radical}}
-#' function.
+#' or \code{\link{fastica}} functions.
 #' @returns An estimated object of one of either \dQuote{cgarch.estimate},
 #' \dQuote{dcc.estimate} or \dQuote{gogarch.estimate}.
 #' @details
@@ -261,8 +269,32 @@ estimate.gogarch.spec <- function(object, trace = FALSE, ...)
 #' @description Filters new data based on an already estimated model.
 #' @param object an object of class \dQuote{cgarch.estimate} or \dQuote{dcc.estimate}.
 #' @param y an xts matrix of new values to filter.
-#' @param newxreg not used in these models.
+#' @param newxreg an optional list with one element per series supplying the mean
+#' equation regressors of the first stage models. Each element is either NULL or a
+#' matrix/xts of regressors with the same number of rows as \code{y} and the same
+#' number of columns as the regressors used when specifying that series' model.
+#' The list may be fully named (in which case it may be partial, with unmentioned
+#' series treated as NULL) or fully unnamed (in which case it must have exactly
+#' one element per series). Series whose first stage models were specified
+#' without mean regressors must have NULL elements. For series with mean
+#' regressors, a NULL element (or a missing entry in a partial named list)
+#' results in the regressors being set to zero with a warning. Not used in the
+#' GOGARCH model.
+#' @param newvreg an optional list with one element per series supplying the
+#' variance equation regressors of the first stage models. Each element is
+#' either NULL or a matrix/xts of regressors with the same number of rows as
+#' \code{y} and the same number of columns as the variance regressors used when
+#' specifying that series' model. The list may be fully named (in which case it
+#' may be partial, with unmentioned series treated as NULL) or fully unnamed
+#' (in which case it must have exactly one element per series). Series whose
+#' first stage models were specified without variance regressors must have NULL
+#' elements. Unlike \code{newxreg}, a NULL element (or a missing entry in a
+#' partial named list) for a series with variance regressors raises an error.
+#' Not used in the GOGARCH model.
 #' @param cond_mean an optional matrix of the filtered conditional mean values.
+#' For the DCC and Copula GARCH models this is only available when every first
+#' stage model uses \code{arma = c(0,0)} and no mean regressors; otherwise the
+#' conditional mean is taken from the first stage models automatically.
 #' @param update whether to update certain values using the most recent information
 #' less than the new data (see details).
 #' @param ... additional arguments for future expansion.
@@ -284,12 +316,12 @@ estimate.gogarch.spec <- function(object, trace = FALSE, ...)
 #' @export
 #'
 #'
-tsfilter.cgarch.estimate <- function(object, y = NULL, newxreg = NULL, update = TRUE, cond_mean = NULL, ...)
+tsfilter.cgarch.estimate <- function(object, y = NULL, newxreg = NULL, newvreg = NULL, update = TRUE, cond_mean = NULL, ...)
 {
     out <- switch(object$spec$dynamics$model,
-                  "constant" = .copula_constant_filter(object, y = y, update = update, cond_mean = cond_mean, ...),
-                  "dcc" = .copula_dynamic_filter(object, y = y, update = update, cond_mean = cond_mean, ...),
-                  "adcc" = .copula_dynamic_filter(object, y = y, update = update, cond_mean = cond_mean, ...))
+                  "constant" = .copula_constant_filter(object, y = y, update = update, cond_mean = cond_mean, newxreg = newxreg, newvreg = newvreg, ...),
+                  "dcc" = .copula_dynamic_filter(object, y = y, update = update, cond_mean = cond_mean, newxreg = newxreg, newvreg = newvreg, ...),
+                  "adcc" = .copula_dynamic_filter(object, y = y, update = update, cond_mean = cond_mean, newxreg = newxreg, newvreg = newvreg, ...))
     return(out)
 }
 
@@ -299,12 +331,12 @@ tsfilter.cgarch.estimate <- function(object, y = NULL, newxreg = NULL, update = 
 #' @export
 #'
 #'
-tsfilter.dcc.estimate <- function(object, y = NULL, newxreg = NULL, update = TRUE, cond_mean = NULL, ...)
+tsfilter.dcc.estimate <- function(object, y = NULL, newxreg = NULL, newvreg = NULL, update = TRUE, cond_mean = NULL, ...)
 {
     out <- switch(object$spec$dynamics$model,
-                  "constant" = .dcc_constant_filter(object, y = y, update = update, cond_mean = cond_mean, ...),
-                  "dcc" = .dcc_dynamic_filter(object, y = y, update = update, cond_mean = cond_mean, ...),
-                  "adcc" = .dcc_dynamic_filter(object, y = y, update = update, cond_mean = cond_mean, ...))
+                  "constant" = .dcc_constant_filter(object, y = y, update = update, cond_mean = cond_mean, newxreg = newxreg, newvreg = newvreg, ...),
+                  "dcc" = .dcc_dynamic_filter(object, y = y, update = update, cond_mean = cond_mean, newxreg = newxreg, newvreg = newvreg, ...),
+                  "adcc" = .dcc_dynamic_filter(object, y = y, update = update, cond_mean = cond_mean, newxreg = newxreg, newvreg = newvreg, ...))
     return(out)
 }
 
@@ -348,6 +380,24 @@ tsfilter.gogarch.estimate <- function(object, y = NULL,  newxreg = NULL, cond_me
 #' samples from the whitened innovations of the fitted model.
 #' @param cond_mean an optional matrix (h x n_series) of the simulated conditional
 #' mean for the series which is used to recenter the simulated distribution.
+#' For the DCC and Copula GARCH models this is only available when every first
+#' stage model uses \code{arma = c(0,0)} and no mean regressors; otherwise the
+#' conditional mean is taken from the first stage models automatically.
+#' @param xreg an optional list with one element per series supplying the mean
+#' equation regressors of the first stage models for the simulated horizon. Each
+#' element is either NULL or a matrix/xts of regressors with \code{h + burn} rows
+#' and the same number of columns as the regressors used when specifying that
+#' series' model. The list may be fully named (and partial) or fully unnamed
+#' (and complete); see the \code{newxreg} argument of \code{\link{tsfilter}} for
+#' details. Not used in the GOGARCH model.
+#' @param vreg an optional list with one element per series supplying the
+#' variance equation regressors of the first stage models for the simulated
+#' horizon. Each element is either NULL or a matrix/xts of regressors with
+#' \code{h + burn} rows and the same number of columns as the variance
+#' regressors used when specifying that series' model. The list may be fully
+#' named (and partial) or fully unnamed (and complete); see the \code{newvreg}
+#' argument of \code{\link{tsfilter}} for details. Not used in the GOGARCH
+#' model.
 #' @param ... no additional arguments currently supported.
 #' @details
 #' Part of the code makes use of parallel functionality via
@@ -356,6 +406,11 @@ tsfilter.gogarch.estimate <- function(object, y = NULL,  newxreg = NULL, cond_me
 #' individual GARCH series simulation), so unless you have more than 100 series
 #' then it is possible that using a parallel back-end may actually result in
 #' slower execution due to the overhead involved.
+#'
+#' When first stage mean or variance regressors are supplied for the simulated
+#' horizon (\code{xreg} and \code{vreg}), they are treated as a single
+#' deterministic path shared across all simulated paths, so regressor
+#' uncertainty is not propagated into the predictive distribution.
 #' @returns A simulation class object for which methods exists for extracting
 #' relevant statistics such as the correlation, covariance, etc.
 #' @aliases simulate
@@ -367,12 +422,12 @@ tsfilter.gogarch.estimate <- function(object, y = NULL,  newxreg = NULL, cond_me
 simulate.cgarch.estimate <- function(object, nsim = 1, seed = NULL, h = 100, burn = 0,
                                      Q_init = NULL, Z_init = NULL,
                                      init_method = c("start", "end"), cond_mean = NULL,
-                                     sim_method = c("parametric", "bootstrap"), ...)
+                                     sim_method = c("parametric", "bootstrap"), xreg = NULL, vreg = NULL, ...)
 {
     out <- switch(object$spec$dynamics$model,
-                  "constant" = .copula_constant_simulate_r(object, nsim = nsim, seed = seed, h = h, burn = burn, init_method = init_method[1], sim_method = sim_method[1], cond_mean = cond_mean, ...),
-                  "dcc" = .copula_dynamic_simulate_r(object, nsim = nsim, seed = seed, h = h, burn = burn, init_method = init_method[1], cond_mean = cond_mean, sim_method = sim_method[1], ...),
-                  "adcc" = .copula_dynamic_simulate_r(object, nsim = nsim, seed = seed, h = h, burn = burn, init_method = init_method[1], cond_mean = cond_mean, sim_method = sim_method[1], ...))
+                  "constant" = .copula_constant_simulate_r(object, nsim = nsim, seed = seed, h = h, burn = burn, init_method = init_method[1], sim_method = sim_method[1], cond_mean = cond_mean, xreg = xreg, vreg = vreg, ...),
+                  "dcc" = .copula_dynamic_simulate_r(object, nsim = nsim, seed = seed, h = h, burn = burn, init_method = init_method[1], cond_mean = cond_mean, sim_method = sim_method[1], xreg = xreg, vreg = vreg, ...),
+                  "adcc" = .copula_dynamic_simulate_r(object, nsim = nsim, seed = seed, h = h, burn = burn, init_method = init_method[1], cond_mean = cond_mean, sim_method = sim_method[1], xreg = xreg, vreg = vreg, ...))
     return(out)
 }
 
@@ -384,12 +439,12 @@ simulate.cgarch.estimate <- function(object, nsim = 1, seed = NULL, h = 100, bur
 simulate.dcc.estimate <- function(object, nsim = 1, seed = NULL, h = 100, burn = 0,
                                   Q_init = NULL, Z_init = NULL,
                                   init_method = c("start", "end"), cond_mean = NULL,
-                                  sim_method = c("parametric", "bootstrap"), ...)
+                                  sim_method = c("parametric", "bootstrap"), xreg = NULL, vreg = NULL, ...)
 {
     out <- switch(object$spec$dynamics$model,
-                  "constant" = .dcc_constant_simulate_r(object, nsim = nsim, seed = seed, h = h, burn = burn, init_method = init_method[1], sim_method = sim_method[1], cond_mean = cond_mean, ...),
-                  "dcc" = .dcc_dynamic_simulate_r(object, nsim = nsim, seed = seed, h = h, burn = burn, init_method = init_method[1], cond_mean = cond_mean, sim_method = sim_method[1], ...),
-                  "adcc" = .dcc_dynamic_simulate_r(object, nsim = nsim, seed = seed, h = h, burn = burn, init_method = init_method[1], cond_mean = cond_mean, sim_method = sim_method[1], ...))
+                  "constant" = .dcc_constant_simulate_r(object, nsim = nsim, seed = seed, h = h, burn = burn, init_method = init_method[1], sim_method = sim_method[1], cond_mean = cond_mean, xreg = xreg, vreg = vreg, ...),
+                  "dcc" = .dcc_dynamic_simulate_r(object, nsim = nsim, seed = seed, h = h, burn = burn, init_method = init_method[1], cond_mean = cond_mean, sim_method = sim_method[1], xreg = xreg, vreg = vreg, ...),
+                  "adcc" = .dcc_dynamic_simulate_r(object, nsim = nsim, seed = seed, h = h, burn = burn, init_method = init_method[1], cond_mean = cond_mean, sim_method = sim_method[1], xreg = xreg, vreg = vreg, ...))
     return(out)
 }
 
@@ -423,10 +478,32 @@ simulate.gogarch.estimate <- function(object, nsim = 1, seed = NULL, h = 100, bu
 #' after the last available date in the data.
 #' @param cond_mean an optional matrix (h x n_series) of the predicted conditional
 #' mean for the series which is used to recenter the simulated predictive distribution.
+#' For the DCC and Copula GARCH models this is only available when every first
+#' stage model uses \code{arma = c(0,0)} and no mean regressors; otherwise the
+#' conditional mean is taken from the first stage models automatically.
+#' @param newxreg an optional list with one element per series supplying the mean
+#' equation regressors of the first stage models for the forecast horizon. Each
+#' element is either NULL or a matrix/xts of regressors with \code{h} rows and the
+#' same number of columns as the regressors used when specifying that series'
+#' model. The list may be fully named (and partial) or fully unnamed (and
+#' complete); see the \code{newxreg} argument of \code{\link{tsfilter}} for
+#' details. Not used in the GOGARCH model.
+#' @param newvreg an optional list with one element per series supplying the
+#' variance equation regressors of the first stage models for the forecast
+#' horizon. Each element is either NULL or a matrix/xts of regressors with
+#' \code{h} rows and the same number of columns as the variance regressors
+#' used when specifying that series' model. The list may be fully named (and
+#' partial) or fully unnamed (and complete); see the \code{newvreg} argument
+#' of \code{\link{tsfilter}} for details. Not used in the GOGARCH model.
 #' @param ... no additional arguments currently supported.
 #' @details
 #' For the Copula GARCH model, the prediction is based on simulation due to the
 #' nonlinear transformation present in the model.
+#'
+#' When first stage mean or variance regressors are supplied for the forecast
+#' horizon (\code{newxreg} and \code{newvreg}), they are treated as a single
+#' deterministic path shared across all simulated paths, so regressor
+#' uncertainty is not propagated into the predictive distribution.
 #' @returns A prediction class object for which methods exists for extracting
 #' relevant statistics such as the correlation, covariance, etc.
 #' @aliases predict
@@ -436,12 +513,12 @@ simulate.gogarch.estimate <- function(object, nsim = 1, seed = NULL, h = 100, bu
 #'
 #'
 predict.cgarch.estimate <- function(object, h = 1, nsim = 1000, sim_method = c("parametric","bootstrap"),
-                                    forc_dates = NULL, cond_mean = NULL, seed = NULL, ...)
+                                    forc_dates = NULL, cond_mean = NULL, seed = NULL, newxreg = NULL, newvreg = NULL, ...)
 {
     out <- switch(object$spec$dynamics$model,
-                  "constant" = .copula_constant_predict(object, h = h, nsim = nsim, sim_method = sim_method[1], forc_dates = forc_dates, cond_mean = cond_mean, seed = seed, ...),
-                  "dcc" = .copula_dynamic_predict(object, h = h, nsim = nsim, sim_method = sim_method[1], forc_dates = forc_dates, cond_mean = cond_mean, seed = seed, ...),
-                  "adcc" = .copula_dynamic_predict(object, h = h, nsim = nsim, sim_method = sim_method[1], forc_dates = forc_dates, cond_mean = cond_mean, seed = seed, ...))
+                  "constant" = .copula_constant_predict(object, h = h, nsim = nsim, sim_method = sim_method[1], forc_dates = forc_dates, cond_mean = cond_mean, seed = seed, newxreg = newxreg, newvreg = newvreg, ...),
+                  "dcc" = .copula_dynamic_predict(object, h = h, nsim = nsim, sim_method = sim_method[1], forc_dates = forc_dates, cond_mean = cond_mean, seed = seed, newxreg = newxreg, newvreg = newvreg, ...),
+                  "adcc" = .copula_dynamic_predict(object, h = h, nsim = nsim, sim_method = sim_method[1], forc_dates = forc_dates, cond_mean = cond_mean, seed = seed, newxreg = newxreg, newvreg = newvreg, ...))
     return(out)
 }
 
@@ -451,12 +528,12 @@ predict.cgarch.estimate <- function(object, h = 1, nsim = 1000, sim_method = c("
 #'
 #'
 predict.dcc.estimate <- function(object, h = 1, nsim = 1000, sim_method = c("parametric","bootstrap"),
-                                    forc_dates = NULL, cond_mean = NULL, seed = NULL, ...)
+                                    forc_dates = NULL, cond_mean = NULL, seed = NULL, newxreg = NULL, newvreg = NULL, ...)
 {
     out <- switch(object$spec$dynamics$model,
-                  "constant" = .dcc_constant_predict(object, h = h, nsim = nsim, sim_method = sim_method[1], forc_dates = forc_dates, cond_mean = cond_mean, seed = seed, ...),
-                  "dcc" = .dcc_dynamic_predict(object, h = h, nsim = nsim, sim_method = sim_method[1], forc_dates = forc_dates, cond_mean = cond_mean, seed = seed, ...),
-                  "adcc" = .dcc_dynamic_predict(object, h = h, nsim = nsim, sim_method = sim_method[1], forc_dates = forc_dates, cond_mean = cond_mean, seed = seed, ...))
+                  "constant" = .dcc_constant_predict(object, h = h, nsim = nsim, sim_method = sim_method[1], forc_dates = forc_dates, cond_mean = cond_mean, seed = seed, newxreg = newxreg, newvreg = newvreg, ...),
+                  "dcc" = .dcc_dynamic_predict(object, h = h, nsim = nsim, sim_method = sim_method[1], forc_dates = forc_dates, cond_mean = cond_mean, seed = seed, newxreg = newxreg, newvreg = newvreg, ...),
+                  "adcc" = .dcc_dynamic_predict(object, h = h, nsim = nsim, sim_method = sim_method[1], forc_dates = forc_dates, cond_mean = cond_mean, seed = seed, newxreg = newxreg, newvreg = newvreg, ...))
     return(out)
 }
 
@@ -1611,13 +1688,13 @@ vcov_estimate <- function(object, adjust = FALSE, type = c("H","OP","QMLE","NW")
     } else if (type == "QMLE") {
         bread. <- bread(object)
         meat. <- meat_tsmarch(object, adjust = adjust)
-        V <- bread. %*% meat. %*% bread.
+        V <- bread. %*% meat. %*% t(bread.)
     } else if (type == "OP") {
         V <- vcovOPG(object, adjust = adjust)
     } else if (type == "NW") {
         bread. <- bread(object)
         meat. <- meatHAC_tsmarch(object, adjust = adjust, ...)
-        V <- bread. %*% meat. %*% bread.
+        V <- bread. %*% meat. %*% t(bread.)
     }
     par_names <- .estimated_parameter_names(object$joint_parmatrix)
     colnames(V) <- rownames(V) <- par_names
